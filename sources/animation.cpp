@@ -276,6 +276,8 @@ void Animation::saveFile()
     if (fileName.isEmpty())
         return;
 
+    fileName.append(".2dA");
+
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly))
     {
