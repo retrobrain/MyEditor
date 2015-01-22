@@ -3,8 +3,8 @@
 
 namespace
 {
-    const int iTimePerFrame = 500; // miliseconds
-    static bool bIsPlayAnim = false;
+const int iTimePerFrame = 500; // miliseconds
+static bool bIsPlayAnim = false;
 };
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -27,7 +27,7 @@ MainWindow::MainWindow(QWidget *parent) :
     //========ToolBar===========
     qreal rButtonSide = QDesktopWidget().availableGeometry().size().height() / 15;
     QSize sButtonSize = QSize(rButtonSide, rButtonSide);
-    createButtons(sButtonSize);
+    createToolBarButtons(sButtonSize);
 
     //========MainMenu==========
     m_pMenu = ui->menuBar->addMenu(tr("File"));
@@ -42,7 +42,17 @@ MainWindow::MainWindow(QWidget *parent) :
     m_frameLabel = new QLabel(QString::number(1));
     QFont("Arial", 10, QFont::Bold);
     m_frameLabel->setFont(QFont("Arial", sButtonSize.height()*0.3));
-    ui->statusBar->addWidget(m_frameLabel);
+    m_frameLabel->setAlignment(Qt::AlignCenter);
+    m_pPrevFrame = new QPushButton("Previous");
+    m_pPrevFrame->setFixedWidth(sButtonSize.height());
+    m_pPrevFrame->setEnabled(false);
+    connect(m_pPrevFrame, SIGNAL(clicked()), this, SLOT(previousFrame()));
+    QPushButton *nextFrame = new QPushButton("Next");
+    nextFrame->setFixedWidth(sButtonSize.height());
+    connect(nextFrame, SIGNAL(clicked()), this, SLOT(nextFrame()));
+    ui->statusBar->addWidget(m_pPrevFrame);
+    ui->statusBar->addWidget(m_frameLabel, 1);
+    ui->statusBar->addWidget(nextFrame);
     pointToolSelected();
 
     //==Timer==
@@ -59,17 +69,113 @@ MainWindow::~MainWindow()
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     int iDirection = 0;
-    switch (event->key())
-    {
-    case Qt::Key_A: --iDirection; break;
-    case Qt::Key_D: ++iDirection; break;
-    }
+    if(!bIsPlayAnim)
+        switch (event->key())
+        {
+        case Qt::Key_A: previousFrame(); break;
+        case Qt::Key_D: nextFrame(); break;
+        }
 
-    int iCurFrame = m_pAnimation->setAnimationFrame(iDirection);
-    m_frameLabel->setText(QString::number(iCurFrame));
 }
 
-void MainWindow::createButtons(QSize buttonSize)
+void MainWindow::nextFrame()
+{
+    int iCurFrame = m_pAnimation->setAnimationFrame(1);
+    m_frameLabel->setText(QString::number(iCurFrame));
+    if(iCurFrame > 1)
+        m_pPrevFrame->setEnabled(true);
+}
+
+void MainWindow::previousFrame()
+{
+    int iCurFrame = m_pAnimation->setAnimationFrame(-1);
+    m_frameLabel->setText(QString::number(iCurFrame));
+    if(iCurFrame == 1)
+        m_pPrevFrame->setEnabled(false);
+}
+
+void MainWindow::pointToolSelected()
+{
+    m_pAnimation->setToolType(TOOL::VERTEX);
+    m_pPointButton->setChecked(true);
+    m_pLineButton->setChecked(false);
+}
+
+void MainWindow::lineToolSelected()
+{
+    m_pAnimation->setToolType(TOOL::EDGE);
+    m_pLineButton->setChecked(true);
+    m_pPointButton->setChecked(false);
+}
+
+void MainWindow::playAnimation()
+{
+    if (bIsPlayAnim)
+        return;
+
+    int newFrameId = m_pAnimation->setAnimationFrame(1 - m_pAnimation->getCurrentFrameIndex());
+    m_frameLabel->setText(QString::number(newFrameId));
+
+    m_pTimer->start(iTimePerFrame);
+    bIsPlayAnim = true;
+
+    buttonsOnPlayState(!bIsPlayAnim);
+}
+
+void MainWindow::stopAnimation()
+{
+    if (!bIsPlayAnim)
+        return;
+
+    bIsPlayAnim = false;
+    m_pTimer->stop();
+
+    int newFrameId = m_pAnimation->setAnimationFrame(1 - m_pAnimation->getCurrentFrameIndex());
+    m_frameLabel->setText(QString::number(newFrameId));
+
+    buttonsOnPlayState(!bIsPlayAnim);
+}
+
+void MainWindow::timerOverflow()
+{
+    if (m_pAnimation->getCurrentFramesCount() == m_pAnimation->getCurrentFrameIndex())
+    {
+        stopAnimation();
+        return;
+    }
+
+    int newFrameId = m_pAnimation->setAnimationFrame(1);
+    m_frameLabel->setText(QString::number(newFrameId));
+}
+
+void MainWindow::setAutoCopy()
+{
+    m_autoCopy = !m_autoCopy;
+    m_pAnimation->setAutoCopy(m_autoCopy);
+}
+
+void MainWindow::copyFrame()
+{
+    m_pAnimation->copyPreviousFrame();
+}
+
+void MainWindow::clearFrame()
+{
+    m_pAnimation->clearFrame();
+}
+
+void MainWindow::save()
+{
+    m_pAnimation->saveFile();
+}
+
+void MainWindow::load()
+{
+    m_pAnimation->loadFile();
+    m_frameLabel->setText(QString::number(1));
+}
+
+void MainWindow::createToolBarButtons(QSize buttonSize)
 {
     m_pPointButton = new QPushButton(tr("Point"));
     m_pPointButton->setFixedHeight(buttonSize.height());
@@ -110,95 +216,16 @@ void MainWindow::createButtons(QSize buttonSize)
     ui->mainToolBar->addWidget(m_pAutoCopyFrame);
 }
 
-void MainWindow::pointToolSelected()
+void MainWindow::buttonsOnPlayState(bool state)
 {
-    m_pAnimation->setToolType(TOOL::VERTEX);
-    m_pPointButton->setChecked(true);
-    m_pLineButton->setChecked(false);
-}
+    QPushButton *pCurButton;
+    for(auto iter : ui->mainToolBar->children())
+        if(pCurButton = qobject_cast<QPushButton*>(iter))
+            if(pCurButton != m_pStopButton)
+                pCurButton->setEnabled(!bIsPlayAnim);
 
-void MainWindow::lineToolSelected()
-{
-    m_pAnimation->setToolType(TOOL::EDGE);
-    m_pLineButton->setChecked(true);
-    m_pPointButton->setChecked(false);
-}
-
-void MainWindow::playAnimation()
-{
-    if (bIsPlayAnim)
-        return;
-
-    int newFrameId = m_pAnimation->setAnimationFrame(1 - m_pAnimation->getCurrentFrameIndex());
-    m_frameLabel->setText(QString::number(newFrameId));
-
-    m_pTimer->start(iTimePerFrame);
-    bIsPlayAnim = true;
-
-    m_pPointButton->setEnabled(!bIsPlayAnim);
-    m_pLineButton->setEnabled(!bIsPlayAnim);
-    m_pPlayButton->setEnabled(!bIsPlayAnim);
-
-    m_pClearFrame->setEnabled(!bIsPlayAnim);
-    m_pCopyFrame->setEnabled(!bIsPlayAnim);
-    m_pAutoCopyFrame->setEnabled(!bIsPlayAnim);
-}
-
-void MainWindow::stopAnimation()
-{
-    if (!bIsPlayAnim)
-        return;
-
-    bIsPlayAnim = false;
-    m_pTimer->stop();
-
-    int newFrameId = m_pAnimation->setAnimationFrame(1 - m_pAnimation->getCurrentFrameIndex());
-    m_frameLabel->setText(QString::number(newFrameId));
-
-    m_pPointButton->setEnabled(!bIsPlayAnim);
-    m_pLineButton->setEnabled(!bIsPlayAnim);
-    m_pPlayButton->setEnabled(!bIsPlayAnim);
-
-    m_pClearFrame->setEnabled(!bIsPlayAnim);
-    m_pCopyFrame->setEnabled(!bIsPlayAnim);
-    m_pAutoCopyFrame->setEnabled(!bIsPlayAnim);
-}
-
-void MainWindow::timerOverflow()
-{
-    if (m_pAnimation->getCurrentFramesCount() == m_pAnimation->getCurrentFrameIndex())
-    {
-        stopAnimation();
-        return;
-    }
-
-    int newFrameId = m_pAnimation->setAnimationFrame(1);
-    m_frameLabel->setText(QString::number(newFrameId));
-}
-
-void MainWindow::setAutoCopy()
-{
-    m_autoCopy = !m_autoCopy;
-    m_pAnimation->setAutoCopy(m_autoCopy);
-}
-
-void MainWindow::copyFrame()
-{
-    m_pAnimation->copyPreviousFrame();
-}
-
-void MainWindow::clearFrame()
-{
-    m_pAnimation->clearFrame();
-}
-
-void MainWindow::save()
-{
-    m_pAnimation->saveFile();
-}
-
-void MainWindow::load()
-{
-    m_pAnimation->loadFile();
-    m_frameLabel->setText(QString::number(1));
+    for(auto iter : ui->statusBar->children())
+        if(pCurButton = qobject_cast<QPushButton*>(iter))
+            pCurButton->setEnabled(!bIsPlayAnim);
+    m_pPrevFrame->setEnabled(false);
 }

@@ -25,9 +25,12 @@ public:
     ~MainWindow();
 
     virtual void keyPressEvent(QKeyEvent *event);
-    void createButtons(QSize buttonSize);
+    void createToolBarButtons(QSize buttonSize);
+    void buttonsOnPlayState(bool state);
 private slots:
     //button events
+    void nextFrame();
+    void previousFrame();
     void pointToolSelected();
     void lineToolSelected();
     void playAnimation();
@@ -61,6 +64,7 @@ private:
     QPushButton    *m_pClearFrame;
     QPushButton    *m_pCopyFrame;
     QPushButton    *m_pAutoCopyFrame;
+    QPushButton    *m_pPrevFrame;
 
     Animation      *m_pAnimation;
 
