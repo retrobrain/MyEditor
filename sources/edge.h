@@ -17,6 +17,9 @@ public:
 
     //check if the line is connected
     bool isConnected(int id){return (m_aPoints[0] == id && m_aPoints[1] == id) ? true : false;}
+
+    int getIdP1(){return m_aPoints[0];}
+    int getIdP2(){return m_aPoints[1];}
 private:
     int m_aPoints[2];
 };

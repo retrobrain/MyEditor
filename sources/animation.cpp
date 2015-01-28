@@ -90,6 +90,7 @@ void Animation::eraseItem(const QPointF &position)
                 edgeEraseList.push_back(edge);
         }
 
+    QList<QMultiHash<int, int>::iterator>connectionsToRelease;
     Vertex *vertex;
     if(!edgeEraseList.isEmpty())
     {
@@ -99,9 +100,24 @@ void Animation::eraseItem(const QPointF &position)
                 if(vertex = qgraphicsitem_cast<Vertex*>(vertexIter))
                     if(edgeIter->isConnected(vertex->getId()))
                         vertex->eraseLine(edgeIter);
+
+
+            int id1 = edgeIter->getIdP1();
+            int id2 = edgeIter->getIdP2();
+
+            QMultiHash<int, int>::iterator iter = m_mapConnections.begin();
+            for(iter; iter != m_mapConnections.end(); ++iter)
+                if(iter.key() == id1 && iter.value() == id2)
+                    connectionsToRelease.push_back(iter);
+
             edgeIter->erase();
         }
     }
+
+    if(!connectionsToRelease.isEmpty())
+        for(auto iter : connectionsToRelease)
+            m_mapConnections.erase(iter);
+
 
     vertex = intersectedVertex(position);
     if(vertex != nullptr)
