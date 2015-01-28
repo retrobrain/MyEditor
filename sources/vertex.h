@@ -27,7 +27,7 @@ public:
 
     void eraseLine(Edge* line);
 
-    //returns id
+    inline void setId(int id){m_iID = id;}
     inline int getId(){return m_iID;}
 
     //used to move attached lines

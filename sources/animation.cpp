@@ -214,9 +214,11 @@ void Animation::loadFrames()
     QMap<int, QPointF>mapVertices = m_vecFrames.at(m_currentFrame-1)->getPoints();
     QMap<int, QPointF>::iterator posIter = mapVertices.begin();
     for(posIter; posIter != mapVertices.end(); ++posIter)
-        m_pFactory->addEllipse(posIter.value());
+    {
+        Vertex *vertex = m_pFactory->addEllipse(posIter.value());
+        vertex->setId(posIter.key());
+    }
 
-    posIter = mapVertices.begin();
     Vertex *start = nullptr;
     Vertex *dest = nullptr;
     Vertex *buff;
