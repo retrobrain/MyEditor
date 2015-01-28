@@ -7,9 +7,9 @@
 QT       += core gui
 QT       += xml
 
-win32{
-QMAKE_LFLAGS += -static -static-libgcc
-}
+#win32{
+#QMAKE_LFLAGS += -static -static-libgcc
+#}
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 

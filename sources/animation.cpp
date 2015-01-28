@@ -400,8 +400,6 @@ void Animation::saveFile()
 
 void Animation::loadFile()
 {
-    resetAnimation();
-
     QString fileName = QFileDialog::getOpenFileName(this, tr("Load Animation"), "",tr("(*.2dA)"));
     if (fileName.isEmpty())
         return;
@@ -422,6 +420,8 @@ void Animation::loadFile()
         return;
     }
     file.close();
+
+    resetAnimation();
 
     QDomElement animation = domDoc.documentElement();
 
