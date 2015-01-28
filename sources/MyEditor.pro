@@ -6,6 +6,7 @@
 
 QT       += core gui
 QT       += xml
+QMAKE_LFLAGS += -static -static-libgcc
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -15,18 +16,20 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    animationframe.cpp \
     animation.cpp \
     itemsfactory.cpp \
     vertex.cpp \
     edge.cpp \
+    layer.cpp \
+    animationframe.cpp
 
 HEADERS  += mainwindow.h \
-    animationframe.h \
     animation.h \
     itemsfactory.h \
     vertex.h \
     edge.h \
+    layer.h \
+    animationframe.h
 
 FORMS    += mainwindow.ui
 

@@ -8,7 +8,7 @@
 
 #include "vertex.h"
 #include "edge.h"
-#include "animationframe.h"
+#include "layer.h"
 
 enum TOOL{VERTEX = 0, EDGE};
 const int TOOLS_NUM = 2;
@@ -16,17 +16,16 @@ const int TOOLS_NUM = 2;
 class ItemFactory
 {
 public:
-    ItemFactory(AnimationFrame* parentFrame);
+    ItemFactory(Layer *layer);
     ~ItemFactory();
 
     Vertex* addEllipse(const QPointF &position);
     Edge* addLine(const QPointF &position);
     Edge* addLine(const QLineF &line);
-    inline void setParentFrame(AnimationFrame* parentFrame){m_pParentFrame=parentFrame;}
 private:
     ItemFactory(){}
 
-    AnimationFrame *m_pParentFrame;
+    Layer          *m_pLayer;
     QPointF         m_startEdgePoint;
 };
 

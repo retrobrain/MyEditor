@@ -36,9 +36,6 @@ private slots:
     void playAnimation();
     void stopAnimation();
     void timerOverflow();
-    void setAutoCopy();
-    void copyFrame();
-    void clearFrame();
     void save();
     void load();
 private:

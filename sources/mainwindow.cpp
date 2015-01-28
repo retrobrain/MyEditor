@@ -23,6 +23,7 @@ MainWindow::MainWindow(QWidget *parent) :
     //========DrawLayer==========4
     m_pAnimation = new Animation(pScene);
     setCentralWidget(m_pAnimation);
+    m_pAnimation->setAnimationSpeed(iTimePerFrame);
 
     //========ToolBar===========
     qreal rButtonSide = QDesktopWidget().availableGeometry().size().height() / 15;
@@ -44,11 +45,9 @@ MainWindow::MainWindow(QWidget *parent) :
     m_frameLabel->setFont(QFont("Arial", sButtonSize.height()*0.3));
     m_frameLabel->setAlignment(Qt::AlignCenter);
     m_pPrevFrame = new QPushButton("Previous");
-    m_pPrevFrame->setFixedWidth(sButtonSize.height());
     m_pPrevFrame->setEnabled(false);
     connect(m_pPrevFrame, SIGNAL(clicked()), this, SLOT(previousFrame()));
     QPushButton *nextFrame = new QPushButton("Next");
-    nextFrame->setFixedWidth(sButtonSize.height());
     connect(nextFrame, SIGNAL(clicked()), this, SLOT(nextFrame()));
     ui->statusBar->addWidget(m_pPrevFrame);
     ui->statusBar->addWidget(m_frameLabel, 1);
@@ -56,8 +55,8 @@ MainWindow::MainWindow(QWidget *parent) :
     pointToolSelected();
 
     //==Timer==
-    m_pTimer = new QTimer(parent);
-    QObject::connect(m_pTimer, SIGNAL(timeout()), this, SLOT(timerOverflow()));
+    m_pTimer = new QTimer;
+    connect(m_pTimer, SIGNAL(timeout()), this, SLOT(timerOverflow()));
 }
 
 MainWindow::~MainWindow()
@@ -75,7 +74,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         case Qt::Key_A: previousFrame(); break;
         case Qt::Key_D: nextFrame(); break;
         }
-
 }
 
 void MainWindow::nextFrame()
@@ -148,22 +146,6 @@ void MainWindow::timerOverflow()
     m_frameLabel->setText(QString::number(newFrameId));
 }
 
-void MainWindow::setAutoCopy()
-{
-    m_autoCopy = !m_autoCopy;
-    m_pAnimation->setAutoCopy(m_autoCopy);
-}
-
-void MainWindow::copyFrame()
-{
-    m_pAnimation->copyPreviousFrame();
-}
-
-void MainWindow::clearFrame()
-{
-    m_pAnimation->clearFrame();
-}
-
 void MainWindow::save()
 {
     m_pAnimation->saveFile();
@@ -196,24 +178,11 @@ void MainWindow::createToolBarButtons(QSize buttonSize)
     QWidget *spacerWidget = new QWidget(this);
     spacerWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     spacerWidget->setVisible(true);
-    m_pClearFrame = new QPushButton(tr("Clear frame"));
-    m_pClearFrame->setFixedHeight(buttonSize.height());
-    connect(m_pClearFrame, SIGNAL(clicked()), this, SLOT(clearFrame()));
-    m_pCopyFrame = new QPushButton(tr("Copy previous"));
-    m_pCopyFrame->setFixedHeight(buttonSize.height());
-    connect(m_pCopyFrame, SIGNAL(clicked()), this, SLOT(copyFrame()));
-    m_pAutoCopyFrame = new QPushButton(tr("AutoCopy"));
-    m_pAutoCopyFrame->setFixedHeight(buttonSize.height());
-    m_pAutoCopyFrame->setCheckable(true);
-    connect(m_pAutoCopyFrame, SIGNAL(clicked()), this, SLOT(setAutoCopy()));
     ui->mainToolBar->addWidget(m_pPointButton);
     ui->mainToolBar->addWidget(m_pLineButton);
     ui->mainToolBar->addWidget(m_pPlayButton);
     ui->mainToolBar->addWidget(m_pStopButton);
     ui->mainToolBar->addWidget(spacerWidget);
-    ui->mainToolBar->addWidget(m_pClearFrame);
-    ui->mainToolBar->addWidget(m_pCopyFrame);
-    ui->mainToolBar->addWidget(m_pAutoCopyFrame);
 }
 
 void MainWindow::buttonsOnPlayState(bool state)

@@ -11,7 +11,14 @@ public:
 
     //detach from parent & remove from scene
     void erase();
+
+    //store the id's of the points connected to this edge
+    void setConnection(int p1, int p2){m_aPoints[0] = p1; m_aPoints[1] = p2;}
+
+    //check if the line is connected
+    bool isConnected(int id){return (m_aPoints[0] == id && m_aPoints[1] == id) ? true : false;}
 private:
+    int m_aPoints[2];
 };
 
 #endif // EDGE_H

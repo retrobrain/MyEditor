@@ -1,9 +1,15 @@
 #include "animation.h"
 
+namespace
+{
+const int iTimePerFrame = 10; // miliseconds
+static bool bIsFrameChanged = true;
+};
+
 Animation::Animation(QGraphicsScene *scene)
     : QGraphicsView(),
+      m_iInterFrames(0),
       m_currentFrame(NULL),
-      m_bAutoCopy(false),
       m_pFactory(nullptr),
       m_startEdgePosition(QPointF(0.0,0.0)),
       m_currentTool(TOOL::VERTEX),
@@ -17,12 +23,16 @@ Animation::Animation(QGraphicsScene *scene)
     setCacheMode(QGraphicsView::CacheBackground);
     setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
 
-    AnimationFrame *frame = new AnimationFrame;
-    scene->addItem(frame);
-    m_vecFrames.push_back(frame);
+    m_pLayer = new Layer;
+    m_pFactory = new ItemFactory(m_pLayer);
+    scene->addItem(m_pLayer);
+
+    AnimationFrame * pFrame = new AnimationFrame;
+    m_vecFrames.push_back(pFrame);
     m_currentFrame++;
 
-    m_pFactory = new ItemFactory(frame);    
+    m_pTimer = new QTimer;
+    connect(m_pTimer, SIGNAL(timeout()), this, SLOT(timerOverflow()));
 }
 
 Animation::~Animation()
@@ -32,6 +42,9 @@ Animation::~Animation()
 
 void Animation::mousePressEvent(QMouseEvent *event)
 {
+    if(!bIsFrameChanged)
+        return;
+
     switch(event->button())
     {
     case Qt::LeftButton:
@@ -53,8 +66,6 @@ void Animation::createItem(const QPointF &position)
     {
         if(m_pCurrentVertex == nullptr)
             m_pCurrentVertex = m_pFactory->addEllipse(position);
-        else
-            makeEdgesMap(position);
     }
     else if(m_currentTool == TOOL::EDGE)
     {
@@ -68,13 +79,9 @@ void Animation::createItem(const QPointF &position)
 
 void Animation::eraseItem(const QPointF &position)
 {
-    Vertex *vertex = intersectedVertex(position);
-
-
-    Edge   *edge;
+    Edge   *edge = nullptr;
     QList<Edge*>edgeEraseList;
-    for(auto iter : m_vecFrames.at(m_currentFrame-1)->childItems())
-    {
+    for(auto iter : m_pLayer->childItems())
         if(edge = qgraphicsitem_cast<Edge*>(iter))
         {
             qreal qrDistance1 = QLineF(position, edge->line().p1()).length();
@@ -82,20 +89,35 @@ void Animation::eraseItem(const QPointF &position)
             if(qrDistance1 < ELIPSE_R || qrDistance2 < ELIPSE_R || edge->isUnderMouse())
                 edgeEraseList.push_back(edge);
         }
+
+    Vertex *vertex;
+    if(!edgeEraseList.isEmpty())
+    {
+        for(auto edgeIter : edgeEraseList)
+        {
+            for(auto vertexIter : m_pLayer->childItems())
+                if(vertex = qgraphicsitem_cast<Vertex*>(vertexIter))
+                    if(edgeIter->isConnected(vertex->getId()))
+                        vertex->eraseLine(edgeIter);
+            edgeIter->erase();
+        }
     }
 
-    if(vertex)
+    vertex = intersectedVertex(position);
+    if(vertex != nullptr)
+    {
+        for(auto iter : m_vecFrames)
+            iter->erasePointById(vertex->getId());
+
         vertex->erase();
-    if(!edgeEraseList.isEmpty())
-        for(auto iter : edgeEraseList)
-            iter->erase();
+    }
 }
 
 Vertex *Animation::intersectedVertex(const QPointF &position)
 {
     Vertex *vertex;
 
-    for(auto vertIter : m_vecFrames.at(m_currentFrame-1)->childItems())
+    for(auto vertIter : m_pLayer->childItems())
         if(vertex = qgraphicsitem_cast<Vertex*>(vertIter))
             if(vertex->isUnderMouse())
                 return vertex;
@@ -103,96 +125,159 @@ Vertex *Animation::intersectedVertex(const QPointF &position)
     return nullptr;
 }
 
-void Animation::makeEdgesMap(const QPointF &position)
-{
-    m_mapEgesToMove.clear();
-    Edge *edge;
-    QPointF destPoint;
-
-    for(auto iter : m_vecFrames.at(m_currentFrame-1)->childItems())
-    {
-        if(edge = qgraphicsitem_cast<Edge*>(iter))
-        {
-            qreal qrDistance1 = QLineF(position, edge->line().p1()).length();
-            qreal qrDistance2 = QLineF(position, edge->line().p2()).length();
-            if(qrDistance1 < ELIPSE_R)
-            {
-                destPoint = edge->line().p2();
-                m_mapEgesToMove.insert(edge, destPoint);
-            }
-            else if(qrDistance2 < ELIPSE_R)
-            {
-                destPoint = edge->line().p1();
-                m_mapEgesToMove.insert(edge, destPoint);
-            }
-        }
-    }
-}
-
 void Animation::mouseMoveEvent(QMouseEvent *event)
 {
     const QPointF& position = mapToScene(event->pos());
     if(m_currentTool == TOOL::VERTEX && m_pCurrentVertex)
-    {
         m_pCurrentVertex->setPos(position);
-
-        if(!m_mapEgesToMove.isEmpty())
-        {
-            QMultiHash<Edge*, QPointF>::iterator iter = m_mapEgesToMove.begin();
-            for(iter; iter != m_mapEgesToMove.end(); ++iter)
-                iter.key()->setLine(QLineF(iter.value(), position));
-        }
-    }
     else if(m_currentTool == TOOL::EDGE && m_pCurrentEdge)
         m_pCurrentEdge->setLine(QLineF(m_startEdgePosition, position));
 }
 
 void Animation::mouseReleaseEvent(QMouseEvent *event)
 {
-    m_mapEgesToMove.clear();
-
-    if(m_currentTool == TOOL::EDGE && m_pCurrentEdge)
-    {
-        Vertex *destVertex = intersectedVertex(mapToScene(event->pos()));
-        bool bConnected;
-        if(destVertex)
+    if(event->button() == Qt::LeftButton)
+        if(m_currentTool == TOOL::VERTEX && m_pCurrentVertex)
         {
-            QPointF destPoint = destVertex->getNormalPos();
-            bConnected = isConnected(m_startEdgePosition, destPoint);
-            if(!bConnected)
-            {
-                m_pCurrentEdge->setLine(QLineF(m_startEdgePosition, destPoint));
-                return;
-            }
+            int id           = m_pCurrentVertex->getId();
+            QPointF position = m_pCurrentVertex->getNormalPos();
+            if(m_vecFrames.at(m_currentFrame-1)->setPositionOnFrame(id, position))
+                for(auto iter : m_vecFrames)
+                    iter->setPositionOnFrame(id, position);
         }
-        m_pCurrentEdge->erase();
-    }
+        else if(m_currentTool == TOOL::EDGE && m_pCurrentEdge)
+        {
+            Vertex *destVertex = intersectedVertex(mapToScene(event->pos()));
+            bool bConnected;
+            if(destVertex)
+            {
+                int id1 = m_pCurrentVertex->getId();
+                int id2 =destVertex->getId();
+                QPointF destPoint = destVertex->getNormalPos();
+                bConnected = isConnected(id1, id2);
+                if(!bConnected)
+                {
+                    m_pCurrentEdge->setLine(QLineF(m_startEdgePosition, destPoint));
+                    m_pCurrentVertex->setLineFrom(m_pCurrentEdge);
+                    destVertex->setLineTo(m_pCurrentEdge);
+                    m_pCurrentEdge->setConnection(id1, id2);
+                    m_mapConnections.insert(id1, id2);
+                    return;
+                }
+            }
+            m_pCurrentEdge->erase();
+        }
+
+    m_pCurrentVertex = nullptr;
+    m_pCurrentEdge   = nullptr;
 }
 
-bool Animation::isConnected(const QPointF &p1, const QPointF &p2)
+void Animation::setAnimationSpeed(int time)
 {
-    Edge *eLine;
-    for(auto iter : m_vecFrames.at(m_currentFrame-1)->childItems())
-    {
-        if(eLine = qgraphicsitem_cast<Edge*>(iter))
-        {
-            if(eLine == m_pCurrentEdge)
-                continue;
+    m_iInterFrames = time / iTimePerFrame;
+}
 
-            qreal qrDistance1 = QLineF(p1, eLine->line().p1()).length();
-            qreal qrDistance2 = QLineF(p1, eLine->line().p2()).length();
-            if(qrDistance1 < ELIPSE_R || qrDistance2 < ELIPSE_R)
+bool Animation::isConnected(const int &id1, const int &id2)
+{
+    QMultiHash<int, int>::iterator iter = m_mapConnections.begin();
+    for(iter; iter != m_mapConnections.end(); ++iter)
+    {
+        int keyId = iter.key();
+        int valId = iter.value();
+        if(keyId == id1 && valId == id2 || keyId == id2 && valId == id1)
+            return true;
+    }
+
+    return false;
+}
+
+void Animation::calculateVelocity()
+{
+    m_listVelocities.clear();
+    Vertex *pVertex;
+    AnimationFrame *pFrame = m_vecFrames.at(m_currentFrame-1);
+
+    for(auto iter : m_pLayer->childItems())
+        if(pVertex = qgraphicsitem_cast<Vertex*>(iter))
+        {
+            int iCurVertexId = pVertex->getId();
+            QPointF startPos = pVertex->getNormalPos();
+            QPointF destPos  = pFrame->getPositionOnFrame(iCurVertexId);
+            QPointF velocity = QPointF(destPos.x() - startPos.x(), destPos.y() - startPos.y()) / m_iInterFrames;
+            m_listVelocities.push_back(velocity);
+        }
+}
+
+void Animation::loadFrames()
+{
+    m_currentFrame++;
+    QMap<int, QPointF>mapVertices = m_vecFrames.at(m_currentFrame-1)->getPoints();
+    QMap<int, QPointF>::iterator posIter = mapVertices.begin();
+    for(posIter; posIter != mapVertices.end(); ++posIter)
+        m_pFactory->addEllipse(posIter.value());
+
+    posIter = mapVertices.begin();
+    Vertex *start = nullptr;
+    Vertex *dest = nullptr;
+    Vertex *buff;
+    QMultiHash<int, int>::iterator conIt = m_mapConnections.begin();
+    for(conIt; conIt != m_mapConnections.end(); ++conIt)
+    {
+        for(auto vertIter : m_pLayer->childItems())
+        {
+            if(buff = qgraphicsitem_cast<Vertex*>(vertIter))
             {
-                qrDistance1 = QLineF(p2, eLine->line().p1()).length();
-                qrDistance2 = QLineF(p2, eLine->line().p2()).length();
-                if(qrDistance1 < ELIPSE_R || qrDistance2 < ELIPSE_R)
+                if(conIt.key() == buff->getId())
+                    start = buff;
+                else if(conIt.value() == buff->getId())
+                    dest = buff;
+                if(start && dest)
                 {
-                    return true;
+                    Edge *edge = m_pFactory->addLine(QLineF(start->getNormalPos(), dest->getNormalPos()));
+                    start->setLineFrom(edge);
+                    dest->setLineTo(edge);
+                    edge->setConnection(conIt.key(), conIt.value());
+                    start = dest = nullptr;
                 }
             }
         }
     }
-    return false;
+}
+
+void Animation::changePointsPosition()
+{
+    if(bIsFrameChanged || m_listVelocities.isEmpty())
+    {
+        m_pTimer->stop();
+        return;
+    }
+
+    bIsFrameChanged = true;
+
+    Vertex *pVertex;
+    AnimationFrame *pFrame = m_vecFrames.at(m_currentFrame-1);
+    qreal minDistance = 1.0;
+
+    QList<QPointF>::iterator veloIter = m_listVelocities.begin();
+    for(auto iter : m_pLayer->childItems())
+        if(pVertex = qgraphicsitem_cast<Vertex*>(iter))
+        {
+            int iCurVertexId = pVertex->getId();
+            QPointF startPos = pVertex->getNormalPos();
+            QPointF destPos  = pFrame->getPositionOnFrame(iCurVertexId);
+            QPointF curPos   = startPos + *veloIter;
+            qreal distance = QLineF(startPos, destPos).length();
+            if(distance > minDistance)
+            {
+                distance = QLineF(startPos, curPos).length();
+                if(distance < minDistance)
+                    curPos = destPos;
+
+                pVertex->setPos(curPos);
+                bIsFrameChanged = false;
+            }
+            veloIter++;
+        }
 }
 
 int Animation::setAnimationFrame(int frameDirection)
@@ -200,61 +285,27 @@ int Animation::setAnimationFrame(int frameDirection)
     if(m_currentFrame+frameDirection == 0)
         return m_currentFrame;
 
-    m_vecFrames.at(m_currentFrame-1)->hide();
-
     m_currentFrame+=frameDirection;
 
-    bool copyPrevious = false;
     if(m_currentFrame-1 == m_vecFrames.size())
     {
-        AnimationFrame *newFrame = new AnimationFrame;
-        scene()->addItem(newFrame);
-        m_vecFrames.push_back(newFrame);
-        copyPrevious = m_bAutoCopy;
+        Vertex *pVertex;
+        AnimationFrame *pFrame = new AnimationFrame;
+
+        for(auto iter : m_pLayer->childItems())
+            if(pVertex = qgraphicsitem_cast<Vertex*>(iter))
+                pFrame->setPositionOnFrame(pVertex->getId(), pVertex->getNormalPos());
+
+        m_vecFrames.push_back(pFrame);
+        return m_currentFrame;
     }
 
-    m_vecFrames.at(m_currentFrame-1)->show();
-    m_pFactory->setParentFrame(m_vecFrames.at(m_currentFrame-1));
 
-    if(copyPrevious)
-        copyPreviousFrame();
+    calculateVelocity();
+    bIsFrameChanged = false;
+    m_pTimer->start(iTimePerFrame);
 
     return m_currentFrame;
-}
-
-void Animation::clearFrame()
-{
-    if(m_vecFrames.at(m_currentFrame-1)->childItems().isEmpty())
-    {
-        return;
-    }
-
-    for(auto childIter : m_vecFrames.at(m_currentFrame-1)->childItems())
-    {
-        if(qgraphicsitem_cast<Vertex*>(childIter))
-            qgraphicsitem_cast<Vertex*>(childIter)->erase();
-        else if(qgraphicsitem_cast<Edge*>(childIter))
-            qgraphicsitem_cast<Edge*>(childIter)->erase();
-    }
-}
-
-void Animation::copyPreviousFrame()
-{
-    if(m_currentFrame < 2)
-    {
-        return;
-    }
-
-    clearFrame();
-
-    Vertex *vertex;
-    Edge   *edge;
-
-    for(auto iter : m_vecFrames.at(m_currentFrame-2)->childItems())
-        if(vertex = qgraphicsitem_cast<Vertex*>(iter))
-            m_pFactory->addEllipse(vertex->getNormalPos());
-        else if(edge = qgraphicsitem_cast<Edge*>(iter))
-            m_pFactory->addLine(edge->line());
 }
 
 int Animation::getCurrentFramesCount() const
@@ -268,6 +319,11 @@ int Animation::getCurrentFrameIndex() const
 }
 
 
+void Animation::timerOverflow()
+{
+    changePointsPosition();
+}
+
 void Animation::saveFile()
 {
 
@@ -275,8 +331,6 @@ void Animation::saveFile()
 
     if (fileName.isEmpty())
         return;
-
-    fileName.append(".2dA");
 
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly))
@@ -295,41 +349,39 @@ void Animation::saveFile()
         QDomElement frame = domDoc.createElement("frame");
         animation.appendChild(frame);
 
-        QDomElement verticesOnFrame = domDoc.createElement("vertices");
+        QDomElement verticesOnFrame = domDoc.createElement("frame_vertices");
         frame.appendChild(verticesOnFrame);
-        QDomElement edgesOnFrame = domDoc.createElement("edges");
-        frame.appendChild(edgesOnFrame);
 
-        for(auto childIter : frameIter->childItems())
+        QMap<int, QPointF>mapVertices = frameIter->getPoints();
+        QMap<int, QPointF>::iterator childIter = mapVertices.begin();
+        for(childIter; childIter != mapVertices.end(); ++childIter)
         {
-            Vertex *vertex;
-            if(vertex = qgraphicsitem_cast<Vertex*>(childIter))
-            {
-                QDomElement vertexToFile = domDoc.createElement("vertex");
-                vertexToFile.setAttribute("x", vertex->getNormalPos().x());
-                vertexToFile.setAttribute("y", vertex->getNormalPos().y());
-                verticesOnFrame.appendChild(vertexToFile);
-            }
-            Edge *edge;
-            if(edge = qgraphicsitem_cast<Edge*>(childIter))
-            {
-                QDomElement edgeToFile = domDoc.createElement("edge");
-                edgeToFile.setAttribute("vertex1x", edge->line().p1().x());
-                edgeToFile.setAttribute("vertex1y", edge->line().p1().y());
-                edgeToFile.setAttribute("vertex2x", edge->line().p2().x());
-                edgeToFile.setAttribute("vertex2y", edge->line().p2().y());
-                edgesOnFrame.appendChild(edgeToFile);
-            }
+            QDomElement pointToFile = domDoc.createElement("frame_vertex");
+            pointToFile.setAttribute("id", childIter.key());
+            pointToFile.setAttribute("x", childIter.value().x());
+            pointToFile.setAttribute("y", childIter.value().y());
+            verticesOnFrame.appendChild(pointToFile);
         }
     }
 
+    QDomElement connections = domDoc.createElement("vertex_connections");
+    animation.appendChild(connections);
+
+    QMultiHash<int, int>::iterator iter = m_mapConnections.begin();
+    for(iter; iter != m_mapConnections.end(); ++iter)
+    {
+        QDomElement connection = domDoc.createElement("connection");
+        connection.setAttribute("id1", iter.key());
+        connection.setAttribute("id2", iter.value());
+        connections.appendChild(connection);
+    }
     QTextStream TextStream(&file);
     TextStream << domDoc.toString();
     file.close();
 }
 
 void Animation::loadFile()
-{    
+{
     resetAnimation();
 
     QString fileName = QFileDialog::getOpenFileName(this, tr("Load Animation"), "",tr("(*.2dA)"));
@@ -353,72 +405,72 @@ void Animation::loadFile()
     }
     file.close();
 
-    QDomElement docElem = domDoc.documentElement();
+    QDomElement animation = domDoc.documentElement();
 
-    QDomNode framesOnFile = docElem.firstChild();
+    QDomNode dataType = animation.firstChild();
 
-    while(!framesOnFile.isNull())
+    while(!dataType.isNull())
     {
-        AnimationFrame *frame = new AnimationFrame;
-        scene()->addItem(frame);
-        m_vecFrames.push_back(frame);
-        m_vecFrames.back()->hide();
-        m_pFactory->setParentFrame(frame);
-
-        QDomNode elementType = framesOnFile.firstChild();
-        if(!elementType.isNull())
+        if(dataType.toElement().tagName() == "frame")
         {
-            if(elementType.toElement().tagName() == "vertices")
+            QDomNode frameVertices = dataType.firstChild();
+            if(!frameVertices.isNull())
             {
-                QDomNode vertices = elementType.firstChild();
+                AnimationFrame * pFrame = new AnimationFrame;
+                m_vecFrames.push_back(pFrame);
+                QDomNode vertices = frameVertices.firstChild();
                 while(!vertices.isNull())
                 {
                     QDomElement vertex = vertices.toElement();
+                    int id = vertex.attribute("id").toInt();
                     QPointF pos(vertex.attribute("x").toDouble(), vertex.attribute("y").toDouble());
-                    m_pFactory->addEllipse(pos);
+                    pFrame->setPositionOnFrame(id, pos);
                     vertices = vertices.nextSibling();
                 }
             }
-            elementType = elementType.nextSibling();
-            if(elementType.toElement().tagName() == "edges")
-            {
-                QDomNode edges = elementType.firstChild();
-                while(!edges.isNull())
-                {
-                    QDomElement edge = edges.toElement();
-                    auto c = edge.tagName();
-                    QPointF pos1(edge.attribute("vertex1x").toDouble(), edge.attribute("vertex1y").toDouble());
-                    QPointF pos2(edge.attribute("vertex2x").toDouble(), edge.attribute("vertex2y").toDouble());
-                    m_pFactory->addLine(QLineF(pos1, pos2));
-                    edges = edges.nextSibling();
-                }
-            }
-            elementType = elementType.nextSibling();
         }
-        framesOnFile = framesOnFile.nextSibling();
+        dataType = dataType.nextSibling();
+        if(dataType.toElement().tagName() == "vertex_connections")
+        {
+            QDomNode connections = dataType.firstChild();
+            while(!connections.isNull())
+            {
+                QDomElement connect = connections.toElement();
+                int id1 = connect.attribute("id1").toInt();
+                int id2 = connect.attribute("id2").toInt();
+                m_mapConnections.insert(id1,id2);
+                connections = connections.nextSibling();
+            }
+            dataType = dataType.nextSibling();
+        }
     }
-
-    m_vecFrames.at(m_currentFrame)->show();
-    m_currentFrame++;
+    loadFrames();
 }
 
 void Animation::resetAnimation()
 {
     for(auto framesIter : m_vecFrames)
-        for(auto childIter : framesIter->childItems())
-        {
-            if(qgraphicsitem_cast<Vertex*>(childIter))
-                qgraphicsitem_cast<Vertex*>(childIter)->erase();
-            else if(qgraphicsitem_cast<Edge*>(childIter))
-                qgraphicsitem_cast<Edge*>(childIter)->erase();
-        }
+        framesIter->clearFrame();
+
+    for(auto childIter : m_pLayer->childItems())
+    {
+        if(qgraphicsitem_cast<Vertex*>(childIter))
+            qgraphicsitem_cast<Vertex*>(childIter)->erase();
+        else if(qgraphicsitem_cast<Edge*>(childIter))
+            qgraphicsitem_cast<Edge*>(childIter)->erase();
+    }
 
     m_vecFrames.clear();
+    m_mapConnections.clear();
+    m_listVelocities.clear();
     scene()->clear();
     m_currentFrame = NULL;
-    m_bAutoCopy = false;
     m_startEdgePosition = QPointF(0.0,0.0);
     m_currentTool = TOOL::VERTEX;
     m_pCurrentVertex = nullptr;
     m_pCurrentEdge = nullptr;
+
+    m_pLayer = new Layer;
+    m_pFactory = new ItemFactory(m_pLayer);
+    scene()->addItem(m_pLayer);
 }

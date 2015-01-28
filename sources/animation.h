@@ -11,12 +11,15 @@
 #include <QtXml/QDomDocument>
 
 #include "animationframe.h"
+#include "layer.h"
 #include "itemsfactory.h"
 
 
 
 class Animation : public QGraphicsView
 {
+    Q_OBJECT
+
 public:
      Animation(QGraphicsScene *scene = nullptr);
     ~Animation();
@@ -27,43 +30,51 @@ public:
     virtual void mouseReleaseEvent(QMouseEvent *event);
 
     //animation properties
+    void setAnimationSpeed(int time);
     int  setAnimationFrame(int frameDirection);
-    inline void setAutoCopy(bool copy){m_bAutoCopy = copy;}
     inline void setToolType(TOOL type){m_currentTool = type;}
-    void clearFrame();
-    void copyPreviousFrame();
 
+
+
+    int getCurrentFramesCount() const;
+    int getCurrentFrameIndex() const;
+
+    //save to file
+    void saveFile();
+
+    //load to frames and connections map. still need to add to the scene
+    void loadFile();
+
+    //reset the animation to it's default state
+    void resetAnimation();
+private slots:
+    void timerOverflow();
+private:
     //check the tool type and create or get the item to move
     void createItem(const QPointF &position);
 
     //returns an intersected vertecs from layer
     Vertex *intersectedVertex(const QPointF &position);
 
-    //groups all intersected edges to a map that is used on "mouseMoveEvent"
-    void    makeEdgesMap(const QPointF &position);
+    //called by timer to change position
+    void changePointsPosition();
 
     //erase all items intersected with position
     void eraseItem(const QPointF &position);
 
     //check if the line wasn't created before
-    bool isConnected(const QPointF &p1, const QPointF &p2);
+    bool isConnected(const int &id1, const int &id2);
 
-    int getCurrentFramesCount() const;
-    int getCurrentFrameIndex() const;
+    //calculates velocity applied on position when the frame is changed
+    void calculateVelocity();
 
-    //save & load
-    void saveFile();
-    void loadFile();
+    //add to the scene loaded objects
+    void loadFrames();
 
-    //reset the animation to it's default state
-    void resetAnimation();
+    int                         m_iInterFrames;
 
-private:
-    QVector<AnimationFrame*>    m_vecFrames;
+    Layer                      *m_pLayer;
     int                         m_currentFrame;
-
-    bool                        m_bAutoCopy;
-    bool                        m_bIsPlaying;
 
     ItemFactory                *m_pFactory;
     QPointF                     m_startEdgePosition;
@@ -71,7 +82,10 @@ private:
 
     Vertex                     *m_pCurrentVertex;
     Edge                       *m_pCurrentEdge;
-    QMultiHash<Edge*, QPointF>  m_mapEgesToMove;
+    QVector<AnimationFrame*>    m_vecFrames;
+    QTimer                     *m_pTimer;
+    QMultiHash<int, int>        m_mapConnections;
+    QList<QPointF>             m_listVelocities;
 };
 
 #endif // ANIMATION_H

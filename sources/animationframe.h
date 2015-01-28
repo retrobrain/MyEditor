@@ -1,17 +1,21 @@
-#ifndef ANIMATION_FRAME_H
-#define ANIMATION_FRAME_H
+#ifndef ANIMATIONFRAME_H
+#define ANIMATIONFRAME_H
 
-#include <QGraphicsItem>
-#include <QGraphicsScene>
+#include <QMap>
+#include <QPointF>
 
-class AnimationFrame : public QGraphicsItem
+class AnimationFrame
 {
 public:
     AnimationFrame();
-
-    // QGraphicsItem interface
-    virtual QRectF boundingRect() const;
-    virtual void paint(QPainter *, const QStyleOptionGraphicsItem *, QWidget *);
+    ~AnimationFrame();
+    bool setPositionOnFrame(int id, QPointF position);
+    QPointF getPositionOnFrame(int id);
+    void erasePointById(int id);
+    QMap<int, QPointF>getPoints(){return m_mapPoints;}
+    void clearFrame(){m_mapPoints.clear();}
+private:
+    QMap<int, QPointF>m_mapPoints;
 };
 
-#endif // ANIMATION_FRAME_H
+#endif // ANIMATIONFRAME_H
